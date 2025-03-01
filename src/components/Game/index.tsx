@@ -99,9 +99,11 @@ const CanvasGame: React.FC = () => {
   // 在组件顶部添加音频资源状态
   const [sounds, setSounds] = useState<{
     shootSound: HTMLAudioElement | null;
+    explosionSound: HTMLAudioElement | null;
     loaded: boolean;
   }>({
     shootSound: null,
+    explosionSound: null,
     loaded: false,
   });
 
@@ -135,31 +137,52 @@ const CanvasGame: React.FC = () => {
       const shootSound = new Audio(
         `${(import.meta as any).env.BASE_URL}biu.mp3`
       );
+      const explosionSound = new Audio(
+        `${(import.meta as any).env.BASE_URL}remove.mp3`
+      );
 
       // 设置音频属性
-      shootSound.preload = "auto"; // 预加载
-      shootSound.volume = 0.5; // 设置音量
+      shootSound.preload = "auto";
+      shootSound.volume = 0.5;
+
+      explosionSound.preload = "auto";
+      explosionSound.volume = 0.6;
 
       // 预加载音频
       shootSound.load();
+      explosionSound.load();
 
       // 音频加载完成后更新状态
-      shootSound.oncanplaythrough = () => {
-        console.log("音频加载完成");
-        setSounds({
-          shootSound,
-          loaded: true,
-        });
+      let loadedCount = 0;
+      const totalSounds = 2;
+
+      const checkAllLoaded = () => {
+        loadedCount++;
+        if (loadedCount >= totalSounds) {
+          console.log("所有音频加载完成");
+          setSounds({
+            shootSound,
+            explosionSound,
+            loaded: true,
+          });
+        }
       };
 
+      shootSound.oncanplaythrough = checkAllLoaded;
+      explosionSound.oncanplaythrough = checkAllLoaded;
+
       // 处理加载错误
-      shootSound.onerror = (e) => {
-        console.error("音频加载失败:", e);
+      const handleError = (e: Event, name: string) => {
+        console.error(`${name}音频加载失败:`, e);
       };
+
+      shootSound.onerror = (e) => handleError(e, "射击");
+      explosionSound.onerror = (e) => handleError(e, "爆炸");
 
       // 立即设置音频对象，不等待加载完成
       setSounds({
         shootSound,
+        explosionSound,
         loaded: false,
       });
 
@@ -168,6 +191,10 @@ const CanvasGame: React.FC = () => {
         if (shootSound) {
           shootSound.oncanplaythrough = null;
           shootSound.onerror = null;
+        }
+        if (explosionSound) {
+          explosionSound.oncanplaythrough = null;
+          explosionSound.onerror = null;
         }
       };
     } catch (error) {
@@ -358,6 +385,9 @@ const CanvasGame: React.FC = () => {
 
             // 创建黄色爆炸效果
             createExplosion(activeEnemy.position, 1, true);
+
+            // 播放爆炸音效
+            playExplosionSound();
 
             // 移除完成的敌人
             const index = gameState.current.activeEnemyIndex;
@@ -1082,6 +1112,9 @@ const CanvasGame: React.FC = () => {
                   // 创建黄色爆炸效果 - 整个单词消失的大爆炸
                   createExplosion(enemy.position, 1, true);
 
+                  // 播放爆炸音效
+                  playExplosionSound();
+
                   // 移除敌人
                   gameState.current.enemies.splice(j, 1);
 
@@ -1146,6 +1179,9 @@ const CanvasGame: React.FC = () => {
               }
               return newLives;
             });
+
+            // 播放爆炸音效
+            playExplosionSound();
 
             // 移除敌人
             gameState.current.enemies.splice(i, 1);
@@ -1314,21 +1350,37 @@ const CanvasGame: React.FC = () => {
     setDisplayScore(score);
   }, [score]);
 
-  // 播放音效的函数
+  // 播放射击音效的函数
   const playShootSound = () => {
     try {
       if (sounds.shootSound) {
-        // 克隆音频对象以支持快速连续播放
         const soundClone = sounds.shootSound.cloneNode(
           true
         ) as HTMLAudioElement;
-        soundClone.volume = 0.5; // 设置音量
+        soundClone.volume = 0.5;
         soundClone.play().catch((err) => {
-          console.error("音效播放失败:", err);
+          console.error("射击音效播放失败:", err);
         });
       }
     } catch (error) {
-      console.error("播放音效时出错:", error);
+      console.error("播放射击音效时出错:", error);
+    }
+  };
+
+  // 播放爆炸音效的函数
+  const playExplosionSound = () => {
+    try {
+      if (sounds.explosionSound) {
+        const soundClone = sounds.explosionSound.cloneNode(
+          true
+        ) as HTMLAudioElement;
+        soundClone.volume = 0.6;
+        soundClone.play().catch((err) => {
+          console.error("爆炸音效播放失败:", err);
+        });
+      }
+    } catch (error) {
+      console.error("播放爆炸音效时出错:", error);
     }
   };
 
