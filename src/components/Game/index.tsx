@@ -26,14 +26,14 @@ interface BulletState {
   speed: number;
 }
 
-interface PlayerState {
-  position: Position;
-  width: number;
-  height: number;
-  lives: number;
-  score: number;
-  rotation: number;
-}
+// interface PlayerState {
+//   position: Position;
+//   width: number;
+//   height: number;
+//   lives: number;
+//   score: number;
+//   rotation: number;
+// }
 
 type GameStatus = "idle" | "playing" | "gameOver";
 
@@ -44,6 +44,7 @@ const CanvasGame: React.FC = () => {
   const [lives, setLives] = useState(3);
   const [gameOver, setGameOver] = useState(false);
   const [displayScore, setDisplayScore] = useState(0);
+  const [difficultyLevel, setDifficultyLevel] = useState(1);
 
   // 游戏状态
   const gameState = useRef({
@@ -332,6 +333,47 @@ const CanvasGame: React.FC = () => {
     }
   };
 
+  // 计算难度系数的函数 - 添加在组件内部
+  const calculateDifficultyFactor = (currentScore: number) => {
+    // 基础难度系数为1.0
+    // 每得10分，难度增加10%，最高增加到3倍初始难度
+    const difficultyIncrease = Math.min(currentScore / 10, 20) * 0.1;
+    return 1.0 + difficultyIncrease;
+  };
+
+  // 检查子弹碰撞
+  const checkBulletCollision = (bullet: BulletState, enemy: WordEnemy) => {
+    const bulletX = bullet.position.x;
+    const bulletY = bullet.position.y;
+
+    const charWidth = enemy.width / enemy.word.length;
+    const nextCharIndex = enemy.hitChars.length;
+
+    if (nextCharIndex >= enemy.word.length) {
+      return false;
+    }
+
+    const targetCharX =
+      enemy.position.x - enemy.width / 2 + charWidth * (nextCharIndex + 0.5);
+    const targetCharY = enemy.position.y;
+
+    // 大幅增加碰撞范围
+    const collisionRadius = charWidth * 3; // 增加到3倍字符宽度
+    const distance = Math.sqrt(
+      Math.pow(bulletX - targetCharX, 2) + Math.pow(bulletY - targetCharY, 2)
+    );
+
+    console.log("碰撞检测:", {
+      子弹位置: { x: bulletX, y: bulletY },
+      目标位置: { x: targetCharX, y: targetCharY },
+      距离: distance,
+      碰撞半径: collisionRadius,
+      是否碰撞: distance < collisionRadius,
+    });
+
+    return distance < collisionRadius;
+  };
+
   // 游戏循环
   useEffect(() => {
     if (gameStatus !== "playing") return;
@@ -344,69 +386,6 @@ const CanvasGame: React.FC = () => {
 
     let animationFrameId: number;
     let lastTime = performance.now();
-
-    // 在 gameLoop 函数中，创建敌人之前计算当前难度系数
-    const difficultyFactor = 1 + Math.min(score / 50, 2); // 随着分数增加，难度最多增加3倍
-
-    // 然后在创建敌人时使用这个难度系数
-    const spawnEnemy = () => {
-      const word =
-        GAME_CONFIG.WORDS[Math.floor(Math.random() * GAME_CONFIG.WORDS.length)];
-      const fontSize = 16;
-      ctx.font = `${fontSize}px monospace`;
-      const wordWidth = ctx.measureText(word).width + 20; // 添加一些内边距
-
-      const x =
-        Math.random() * (gameState.current.canvasWidth - wordWidth) +
-        wordWidth / 2;
-
-      gameState.current.enemies.push({
-        word,
-        typedChars: "",
-        hitChars: "",
-        position: { x, y: 0 },
-        width: wordWidth,
-        height: 30,
-        speed: GAME_CONFIG.ENEMY_SPEED * difficultyFactor,
-      });
-
-      if (gameState.current.activeEnemyIndex === -1) {
-        gameState.current.activeEnemyIndex = 0;
-      }
-    };
-
-    // 检查子弹碰撞
-    const checkBulletCollision = (bullet: BulletState, enemy: WordEnemy) => {
-      const bulletX = bullet.position.x;
-      const bulletY = bullet.position.y;
-
-      const charWidth = enemy.width / enemy.word.length;
-      const nextCharIndex = enemy.hitChars.length;
-
-      if (nextCharIndex >= enemy.word.length) {
-        return false;
-      }
-
-      const targetCharX =
-        enemy.position.x - enemy.width / 2 + charWidth * (nextCharIndex + 0.5);
-      const targetCharY = enemy.position.y;
-
-      // 大幅增加碰撞范围
-      const collisionRadius = charWidth * 3; // 增加到3倍字符宽度
-      const distance = Math.sqrt(
-        Math.pow(bulletX - targetCharX, 2) + Math.pow(bulletY - targetCharY, 2)
-      );
-
-      console.log("碰撞检测:", {
-        子弹位置: { x: bulletX, y: bulletY },
-        目标位置: { x: targetCharX, y: targetCharY },
-        距离: distance,
-        碰撞半径: collisionRadius,
-        是否碰撞: distance < collisionRadius,
-      });
-
-      return distance < collisionRadius;
-    };
 
     // 绘制游戏
     const drawGame = () => {
@@ -452,7 +431,7 @@ const CanvasGame: React.FC = () => {
 
       // 绘制并更新星星位置 - 更清晰的星星
       const currentTime = performance.now();
-      gameState.current.stars.forEach((star, index) => {
+      gameState.current.stars.forEach((star) => {
         // 更新星星位置 - 让星星向下移动得更快，增强飞行感
         star.y += star.speed * 3; // 保持较快的速度
 
@@ -607,14 +586,14 @@ const CanvasGame: React.FC = () => {
           // 计算图片大小 (基于子弹半径)
           const size = bullet.radius * 4; // 调整大小以适应图片
 
-          // 绘制图片 (居中)
-          ctx.drawImage(
-            resources.bulletImage,
-            -size / 2,
-            -size / 2,
-            size,
-            size
-          );
+          // // 绘制图片 (居中)
+          // ctx.drawImage(
+          //   resources.bulletImage,
+          //   -size / 2,
+          //   -size / 2,
+          //   size,
+          //   size
+          // );
 
           // 添加发光效果
           ctx.globalCompositeOperation = "lighter";
@@ -849,13 +828,13 @@ const CanvasGame: React.FC = () => {
 
       // 绘制UI - 分数和生命值
       // 设置UI区域 - 确保水平居中
-      const uiHeight = 50;
+      // const uiHeight = 50;
       const uiY = 25; // 调整垂直位置
 
       // 计算UI元素的位置
       const heartSize = 25;
       const heartSpacing = 10;
-      const totalHeartsWidth = 3 * heartSize + 2 * heartSpacing;
+      // const totalHeartsWidth = 3 * heartSize + 2 * heartSpacing;
 
       // 绘制生命值 - 红心
       const heartsY = uiY;
@@ -919,46 +898,51 @@ const CanvasGame: React.FC = () => {
     };
 
     // 游戏主循环
-    const gameLoop = () => {
-      const currentTime = performance.now();
+    const gameLoop = (timestamp: number) => {
+      const currentTime = timestamp;
       const deltaTime = currentTime - lastTime;
 
       if (deltaTime >= 16) {
         // 约60fps
+        // 计算当前难度系数
+        const difficultyFactor = calculateDifficultyFactor(score);
+
         // 生成敌人
         if (
           currentTime - gameState.current.lastEnemyTime >
-          GAME_CONFIG.ENEMY_SPAWN_INTERVAL
+          GAME_CONFIG.ENEMY_SPAWN_INTERVAL / Math.sqrt(difficultyFactor) // 随着难度增加，敌人生成间隔减少
         ) {
           // 随机选择一个单词
           const wordIndex = Math.floor(
             Math.random() * GAME_CONFIG.WORDS.length
           );
           const word = GAME_CONFIG.WORDS[wordIndex];
+          const fontSize = 16;
+          ctx.font = `${fontSize}px monospace`;
+          const wordWidth = ctx.measureText(word).width + 20; // 添加一些内边距
 
-          // 计算敌人宽度
-          const ctx = canvas.getContext("2d");
-          if (ctx) {
-            ctx.font = "16px monospace";
-            const wordWidth = ctx.measureText(word).width + 20; // 添加一些内边距
+          // 随机生成敌人的水平位置
+          const x =
+            Math.random() * (gameState.current.canvasWidth - wordWidth) +
+            wordWidth / 2;
 
-            // 随机生成敌人的水平位置
-            const x =
-              Math.random() * (canvas.width - wordWidth) + wordWidth / 2;
+          // 创建新敌人 - 使用难度系数调整速度
+          gameState.current.enemies.push({
+            word,
+            typedChars: "",
+            hitChars: "",
+            position: { x, y: 0 },
+            width: wordWidth,
+            height: 30,
+            // 基础速度 * 难度系数 * 随机变化(0.9-1.1)
+            speed:
+              GAME_CONFIG.ENEMY_SPEED *
+              difficultyFactor *
+              (0.9 + Math.random() * 0.2),
+          });
 
-            // 创建新敌人
-            gameState.current.enemies.push({
-              word,
-              typedChars: "",
-              hitChars: "",
-              position: { x, y: 0 },
-              width: wordWidth,
-              speed: GAME_CONFIG.ENEMY_SPEED * difficultyFactor,
-            });
-
-            // 更新最后一次生成敌人的时间
-            gameState.current.lastEnemyTime = currentTime;
-          }
+          // 更新最后一次生成敌人的时间
+          gameState.current.lastEnemyTime = currentTime;
         }
 
         // 更新子弹位置
@@ -1128,7 +1112,7 @@ const CanvasGame: React.FC = () => {
             // 如果当前活跃敌人超过安全线，切换到下一个未超过安全线的敌人
             if (i === gameState.current.activeEnemyIndex) {
               const newActiveIndex = gameState.current.enemies.findIndex(
-                (e, idx) =>
+                (e) =>
                   e.position.y < gameState.current.safetyLineY &&
                   e.typedChars.length < e.word.length
               );
@@ -1181,6 +1165,12 @@ const CanvasGame: React.FC = () => {
         // 绘制游戏
         drawGame();
 
+        // 在 gameLoop 函数中更新难度级别
+        const newDifficultyLevel = Math.floor(difficultyFactor);
+        if (newDifficultyLevel !== difficultyLevel) {
+          setDifficultyLevel(newDifficultyLevel);
+        }
+
         lastTime = currentTime;
       }
 
@@ -1189,7 +1179,7 @@ const CanvasGame: React.FC = () => {
 
     // 使用外部定义的 handleKeyPress 函数
     window.addEventListener("keydown", handleKeyPress);
-    gameLoop();
+    gameLoop(performance.now());
 
     return () => {
       window.removeEventListener("keydown", handleKeyPress);
@@ -1291,6 +1281,15 @@ const CanvasGame: React.FC = () => {
       {gameStatus === "playing" && (
         <div className={styles.scoreDisplay}>
           <span className={styles.scoreValue}>{displayScore}</span>
+        </div>
+      )}
+
+      {/* 难度级别显示 */}
+      {gameStatus === "playing" && difficultyLevel > 1 && (
+        <div className={styles.difficultyDisplay}>
+          <span className={styles.difficultyValue}>
+            难度: {difficultyLevel}
+          </span>
         </div>
       )}
 
