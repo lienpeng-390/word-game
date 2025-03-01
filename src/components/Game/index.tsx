@@ -58,7 +58,52 @@ const CanvasGame: React.FC = () => {
     canvasWidth: 0,
     canvasHeight: 0,
     safetyLineY: 0,
+    explosions: [] as {
+      position: Position;
+      radius: number;
+      color: string;
+      alpha: number;
+      maxRadius: number;
+      particles: {
+        x: number;
+        y: number;
+        vx: number;
+        vy: number;
+        radius: number;
+        color: string;
+        alpha: number;
+      }[];
+    }[],
   });
+
+  // 在组件顶部添加图片资源状态
+  const [resources, setResources] = useState<{
+    bulletImage: HTMLImageElement | null;
+    loaded: boolean;
+  }>({
+    bulletImage: null,
+    loaded: false,
+  });
+
+  // 在组件挂载时加载图片资源
+  useEffect(() => {
+    // 创建图片对象
+    const bulletImage = new Image();
+    bulletImage.src = "/assets/energy-ball.png"; // 这里需要在public/assets目录下放置能量球图片
+
+    // 图片加载完成后更新状态
+    bulletImage.onload = () => {
+      setResources({
+        bulletImage,
+        loaded: true,
+      });
+    };
+
+    return () => {
+      // 清理资源
+      bulletImage.onload = null;
+    };
+  }, []);
 
   // 初始化Canvas
   useEffect(() => {
@@ -224,23 +269,99 @@ const CanvasGame: React.FC = () => {
       // 恢复绘图状态
       ctx.restore();
 
-      // 绘制子弹
-      ctx.fillStyle = "#ffeb3b";
-      gameState.current.bullets.forEach((bullet) => {
-        ctx.beginPath();
-        ctx.arc(
-          bullet.position.x,
-          bullet.position.y,
-          bullet.radius,
-          0,
-          Math.PI * 2
-        );
-        ctx.fill();
-        ctx.shadowBlur = 5;
-        ctx.shadowColor = "#ffeb3b";
-        ctx.fill();
-        ctx.shadowBlur = 0;
-      });
+      // 绘制子弹 - 使用图片素材
+      if (resources.loaded && resources.bulletImage) {
+        gameState.current.bullets.forEach((bullet) => {
+          // 保存当前绘图状态
+          ctx.save();
+
+          // 移动到子弹位置
+          ctx.translate(bullet.position.x, bullet.position.y);
+
+          // 旋转图片以匹配子弹方向
+          ctx.rotate(bullet.angle);
+
+          // 计算图片大小 (基于子弹半径)
+          const size = bullet.radius * 4; // 调整大小以适应图片
+
+          // 绘制图片 (居中)
+          ctx.drawImage(
+            resources.bulletImage,
+            -size / 2,
+            -size / 2,
+            size,
+            size
+          );
+
+          // 添加发光效果
+          ctx.globalCompositeOperation = "lighter";
+
+          // 创建径向渐变
+          const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, size / 2);
+
+          // 设置渐变颜色
+          gradient.addColorStop(0, "rgba(100, 200, 255, 0.5)");
+          gradient.addColorStop(1, "rgba(0, 50, 255, 0)");
+
+          // 绘制发光效果
+          ctx.beginPath();
+          ctx.arc(0, 0, size / 2, 0, Math.PI * 2);
+          ctx.fillStyle = gradient;
+          ctx.fill();
+
+          // 添加脉动效果
+          const pulseSize = Math.sin(performance.now() * 0.01) * 0.2 + 1;
+          ctx.beginPath();
+          ctx.arc(0, 0, (size / 2) * pulseSize, 0, Math.PI * 2);
+          ctx.strokeStyle = "rgba(150, 220, 255, 0.4)";
+          ctx.lineWidth = 2;
+          ctx.stroke();
+
+          // 恢复绘图状态
+          ctx.restore();
+        });
+      } else {
+        // 如果图片未加载完成，使用之前的绘制方法作为后备
+        gameState.current.bullets.forEach((bullet) => {
+          // 绘制子弹 - 能量球效果
+          ctx.fillStyle = "#ffeb3b";
+          ctx.beginPath();
+          ctx.arc(
+            bullet.position.x,
+            bullet.position.y,
+            bullet.radius * 1.5,
+            0,
+            Math.PI * 2
+          );
+          ctx.fill();
+
+          // 绘制核心
+          ctx.beginPath();
+          ctx.arc(
+            bullet.position.x,
+            bullet.position.y,
+            bullet.radius * 0.7,
+            0,
+            Math.PI * 2
+          );
+          ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
+          ctx.fill();
+
+          // 添加脉动效果
+          const pulseSize = Math.sin(performance.now() * 0.01) * 0.2 + 1;
+          ctx.beginPath();
+          ctx.arc(
+            bullet.position.x,
+            bullet.position.y,
+            bullet.radius * pulseSize,
+            0,
+            Math.PI * 2
+          );
+          ctx.strokeStyle = "rgba(150, 220, 255, 0.6)";
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        });
+      }
 
       // 绘制敌人
       gameState.current.enemies.forEach((enemy, index) => {
@@ -278,6 +399,66 @@ const CanvasGame: React.FC = () => {
           const charX = x + charWidth * (i + 0.5);
           ctx.fillStyle = "#ffffff";
           ctx.fillText(enemy.word[i], charX, enemy.position.y);
+        }
+      });
+
+      // 绘制爆炸效果
+      gameState.current.explosions.forEach((explosion, index) => {
+        // 绘制爆炸光环
+        const gradient = ctx.createRadialGradient(
+          explosion.position.x,
+          explosion.position.y,
+          0,
+          explosion.position.x,
+          explosion.position.y,
+          explosion.radius
+        );
+
+        gradient.addColorStop(0, `rgba(255, 255, 255, ${explosion.alpha})`);
+        gradient.addColorStop(
+          0.3,
+          `rgba(255, 200, 100, ${explosion.alpha * 0.8})`
+        );
+        gradient.addColorStop(
+          0.7,
+          `rgba(255, 100, 50, ${explosion.alpha * 0.5})`
+        );
+        gradient.addColorStop(1, `rgba(255, 50, 0, 0)`);
+
+        ctx.beginPath();
+        ctx.arc(
+          explosion.position.x,
+          explosion.position.y,
+          explosion.radius,
+          0,
+          Math.PI * 2
+        );
+        ctx.fillStyle = gradient;
+        ctx.fill();
+
+        // 绘制爆炸粒子
+        explosion.particles.forEach((particle) => {
+          ctx.beginPath();
+          ctx.arc(particle.x, particle.y, particle.radius, 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(255, 200, 100, ${particle.alpha})`;
+          ctx.fill();
+        });
+
+        // 更新爆炸状态
+        explosion.radius += 2;
+        explosion.alpha -= 0.02;
+
+        // 更新粒子位置
+        explosion.particles.forEach((particle) => {
+          particle.x += particle.vx;
+          particle.y += particle.vy;
+          particle.alpha -= 0.02;
+          particle.radius *= 0.98;
+        });
+
+        // 移除已完成的爆炸效果
+        if (explosion.alpha <= 0) {
+          gameState.current.explosions.splice(index, 1);
         }
       });
 
@@ -376,6 +557,9 @@ const CanvasGame: React.FC = () => {
 
                   // 增加完成奖励
                   setScore((prev) => prev + enemy.word.length * 50);
+
+                  // 创建爆炸效果
+                  createExplosion(enemy.position);
 
                   // 移除敌人
                   gameState.current.enemies.splice(i, 1);
@@ -596,6 +780,9 @@ const CanvasGame: React.FC = () => {
               // 增加完成奖励
               setScore((prev) => prev + activeEnemy.word.length * 50);
 
+              // 创建爆炸效果
+              createExplosion(activeEnemy.position);
+
               // 移除敌人
               const enemyIndex = activeIndex;
               gameState.current.enemies.splice(enemyIndex, 1);
@@ -642,6 +829,7 @@ const CanvasGame: React.FC = () => {
       enemies: [],
       lastEnemyTime: performance.now(),
       activeEnemyIndex: -1,
+      explosions: [],
     };
 
     setScore(0);
@@ -664,10 +852,43 @@ const CanvasGame: React.FC = () => {
       enemies: [],
       lastEnemyTime: performance.now(),
       activeEnemyIndex: -1,
+      explosions: [],
     };
     setScore(0);
     setLives(3);
     setGameStatus("playing");
+  };
+
+  // 添加创建爆炸效果的函数
+  const createExplosion = (position: Position) => {
+    const particles = [];
+    const particleCount = 20 + Math.floor(Math.random() * 10);
+
+    // 创建爆炸粒子
+    for (let i = 0; i < particleCount; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 1 + Math.random() * 3;
+
+      particles.push({
+        x: position.x,
+        y: position.y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        radius: 2 + Math.random() * 3,
+        color: `hsl(${30 + Math.random() * 30}, 100%, 70%)`,
+        alpha: 1,
+      });
+    }
+
+    // 添加爆炸效果到数组
+    gameState.current.explosions.push({
+      position: { ...position },
+      radius: 10,
+      color: "#ffeb3b",
+      alpha: 1,
+      maxRadius: 40 + Math.random() * 20,
+      particles,
+    });
   };
 
   return (

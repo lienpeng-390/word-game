@@ -11,7 +11,7 @@ const StartPage: React.FC = () => {
 
   return (
     <div className={styles.container}>
-      <h1 className={styles.title}>飞机大战</h1>
+      <h1 className={styles.title}>单词大战</h1>
       <button className={styles.startButton} onClick={handleStartGame}>
         开始游戏
       </button>
