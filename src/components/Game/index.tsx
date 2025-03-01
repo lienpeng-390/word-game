@@ -280,7 +280,7 @@ const CanvasGame: React.FC = () => {
           // 使用较小的爆炸效果
           createExplosion(
             { x: charX, y: charY },
-            0.4, // 尺寸更小
+            0.25, // 尺寸更小，从0.4减小到0.25
             true // 使用黄色系
           );
 
@@ -345,7 +345,10 @@ const CanvasGame: React.FC = () => {
     let animationFrameId: number;
     let lastTime = performance.now();
 
-    // 生成敌人
+    // 在 gameLoop 函数中，创建敌人之前计算当前难度系数
+    const difficultyFactor = 1 + Math.min(score / 50, 2); // 随着分数增加，难度最多增加3倍
+
+    // 然后在创建敌人时使用这个难度系数
     const spawnEnemy = () => {
       const word =
         GAME_CONFIG.WORDS[Math.floor(Math.random() * GAME_CONFIG.WORDS.length)];
@@ -364,7 +367,7 @@ const CanvasGame: React.FC = () => {
         position: { x, y: 0 },
         width: wordWidth,
         height: 30,
-        speed: GAME_CONFIG.ENEMY_SPEED,
+        speed: GAME_CONFIG.ENEMY_SPEED * difficultyFactor,
       });
 
       if (gameState.current.activeEnemyIndex === -1) {
@@ -411,7 +414,7 @@ const CanvasGame: React.FC = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
       // 绘制星空背景 - 更高清的效果
-      ctx.fillStyle = "#000020"; // 深蓝色背景
+      ctx.fillStyle = "#000010"; // 更深的蓝黑色背景，提高对比度
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
       // 绘制远处的星云 - 更清晰的效果
@@ -424,8 +427,8 @@ const CanvasGame: React.FC = () => {
         canvas.height * 0.4,
         canvas.width * 0.5
       );
-      nebula1.addColorStop(0, "rgba(120, 70, 170, 0.12)");
-      nebula1.addColorStop(0.5, "rgba(100, 50, 150, 0.08)");
+      nebula1.addColorStop(0, "rgba(120, 70, 170, 0.15)"); // 增加不透明度
+      nebula1.addColorStop(0.5, "rgba(100, 50, 150, 0.1)");
       nebula1.addColorStop(1, "rgba(0, 0, 30, 0)");
 
       ctx.fillStyle = nebula1;
@@ -440,25 +443,25 @@ const CanvasGame: React.FC = () => {
         canvas.height * 0.6,
         canvas.width * 0.6
       );
-      nebula2.addColorStop(0, "rgba(70, 120, 170, 0.12)");
-      nebula2.addColorStop(0.5, "rgba(50, 100, 150, 0.08)");
+      nebula2.addColorStop(0, "rgba(70, 120, 170, 0.15)"); // 增加不透明度
+      nebula2.addColorStop(0.5, "rgba(50, 100, 150, 0.1)");
       nebula2.addColorStop(1, "rgba(0, 0, 30, 0)");
 
       ctx.fillStyle = nebula2;
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      // 绘制并更新星星位置 - 更快的飞行速度和更清晰的星星
+      // 绘制并更新星星位置 - 更清晰的星星
       const currentTime = performance.now();
       gameState.current.stars.forEach((star, index) => {
         // 更新星星位置 - 让星星向下移动得更快，增强飞行感
-        star.y += star.speed * 3; // 增加速度
+        star.y += star.speed * 3; // 保持较快的速度
 
         // 如果星星移出屏幕底部，将其重置到顶部
         if (star.y > canvas.height) {
           star.y = 0;
           star.x = Math.random() * canvas.width;
           // 随机更新速度，使流动更自然
-          star.speed = 0.1 + Math.random() * 0.3; // 增加基础速度
+          star.speed = 0.1 + Math.random() * 0.3;
         }
 
         // 星星闪烁效果
@@ -473,34 +476,36 @@ const CanvasGame: React.FC = () => {
         // 绘制更清晰的星星
         const starRadius = star.radius * (1 + star.speed); // 速度快的星星更大
 
-        // 使用锐利的星星绘制方法
+        // 使用更清晰的星星绘制方法
+        ctx.fillStyle = `hsla(${hue}, ${saturation}%, 95%, ${brightness})`; // 增加亮度到95%
+
+        // 对于大星星，使用更清晰的绘制方法
         if (starRadius > 1.5) {
-          // 大星星使用十字星形状
-          ctx.fillStyle = `hsla(${hue}, ${saturation}%, 90%, ${brightness})`;
-
-          // 水平线
-          ctx.fillRect(
-            star.x - starRadius * 1.5,
-            star.y - starRadius * 0.5,
-            starRadius * 3,
-            starRadius
-          );
-
-          // 垂直线
-          ctx.fillRect(
-            star.x - starRadius * 0.5,
-            star.y - starRadius * 1.5,
-            starRadius,
-            starRadius * 3
-          );
-
-          // 中心点
+          // 先绘制一个锐利的点
           ctx.beginPath();
           ctx.arc(star.x, star.y, starRadius, 0, Math.PI * 2);
           ctx.fill();
+
+          // 添加十字光芒效果，使星星更锐利
+          ctx.beginPath();
+          ctx.moveTo(star.x - starRadius * 2, star.y);
+          ctx.lineTo(star.x + starRadius * 2, star.y);
+          ctx.strokeStyle = `hsla(${hue}, ${saturation}%, 95%, ${
+            brightness * 0.7
+          })`;
+          ctx.lineWidth = starRadius * 0.5;
+          ctx.stroke();
+
+          ctx.beginPath();
+          ctx.moveTo(star.x, star.y - starRadius * 2);
+          ctx.lineTo(star.x, star.y + starRadius * 2);
+          ctx.strokeStyle = `hsla(${hue}, ${saturation}%, 95%, ${
+            brightness * 0.7
+          })`;
+          ctx.lineWidth = starRadius * 0.5;
+          ctx.stroke();
         } else {
-          // 小星星使用圆形
-          ctx.fillStyle = `hsla(${hue}, ${saturation}%, 90%, ${brightness})`;
+          // 小星星使用简单的圆形，但增加亮度
           ctx.beginPath();
           ctx.arc(star.x, star.y, starRadius, 0, Math.PI * 2);
           ctx.fill();
@@ -508,29 +513,29 @@ const CanvasGame: React.FC = () => {
 
         // 为较大的星星添加光晕效果和拖尾效果
         if (starRadius > 1.8) {
-          // 光晕
+          // 光晕 - 更清晰的光晕
           const glow = ctx.createRadialGradient(
             star.x,
             star.y,
             0,
             star.x,
             star.y,
-            starRadius * 5
+            starRadius * 4
           );
-          glow.addColorStop(0, `rgba(255, 255, 255, ${brightness * 0.7})`);
-          glow.addColorStop(0.5, `rgba(180, 220, 255, ${brightness * 0.3})`);
+          glow.addColorStop(0, `rgba(255, 255, 255, ${brightness * 0.8})`); // 增加中心亮度
+          glow.addColorStop(0.5, `rgba(180, 220, 255, ${brightness * 0.4})`);
           glow.addColorStop(1, "rgba(100, 180, 255, 0)");
 
           ctx.fillStyle = glow;
           ctx.beginPath();
-          ctx.arc(star.x, star.y, starRadius * 5, 0, Math.PI * 2);
+          ctx.arc(star.x, star.y, starRadius * 4, 0, Math.PI * 2);
           ctx.fill();
 
-          // 拖尾效果 - 更长的拖尾
+          // 拖尾效果 - 更清晰的拖尾
           ctx.beginPath();
           ctx.moveTo(star.x, star.y);
           ctx.lineTo(star.x, star.y - star.speed * 20);
-          ctx.strokeStyle = `rgba(255, 255, 255, ${brightness * 0.5})`;
+          ctx.strokeStyle = `rgba(255, 255, 255, ${brightness * 0.6})`; // 增加拖尾亮度
           ctx.lineWidth = starRadius * 0.8;
           ctx.stroke();
         }
@@ -685,39 +690,79 @@ const CanvasGame: React.FC = () => {
       gameState.current.enemies.forEach((enemy, index) => {
         const isActive = index === gameState.current.activeEnemyIndex;
 
+        // 计算敌人背景位置和尺寸
+        const padding = 10; // 文字与边框的间距
+        const fontSize = 16;
+
+        // 测量整个单词的宽度
+        ctx.font = `bold ${fontSize}px monospace`;
+        const wordWidth = ctx.measureText(enemy.word).width;
+
+        // 确保敌人宽度足够容纳单词
+        enemy.width = Math.max(enemy.width, wordWidth + padding * 2);
+
         // 绘制敌人背景
-        ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
-        ctx.strokeStyle = isActive ? "#ffeb3b" : "#ffffff";
-        ctx.lineWidth = 1;
+        ctx.fillStyle = isActive
+          ? "rgba(255, 235, 59, 0.3)" // 活跃敌人使用黄色背景
+          : "rgba(0, 0, 0, 0.6)"; // 非活跃敌人使用深色背景
 
-        const x = enemy.position.x - enemy.width / 2;
-        const y = enemy.position.y - enemy.height / 2;
-
+        // 绘制圆角矩形背景
+        const bgHeight = 30;
         ctx.beginPath();
-        ctx.roundRect(x, y, enemy.width, enemy.height, 4);
+        ctx.roundRect(
+          enemy.position.x - enemy.width / 2,
+          enemy.position.y - bgHeight / 2,
+          enemy.width,
+          bgHeight,
+          5
+        );
         ctx.fill();
+
+        // 绘制边框
+        ctx.strokeStyle = isActive ? "#ffeb3b" : "#ffffff";
+        ctx.lineWidth = isActive ? 2 : 1;
         ctx.stroke();
 
-        // 绘制文字
-        ctx.font = "16px monospace";
+        // 设置文字样式
+        ctx.font = `bold ${fontSize}px monospace`; // 使用粗体增加清晰度
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
 
+        // 为文字添加阴影，增加清晰度
+        ctx.shadowColor = "rgba(0, 0, 0, 0.7)";
+        ctx.shadowBlur = 3;
+        ctx.shadowOffsetX = 1;
+        ctx.shadowOffsetY = 1;
+
+        // 计算每个字符的位置
         const charWidth = enemy.width / enemy.word.length;
+        const startX = enemy.position.x - enemy.width / 2 + charWidth / 2;
 
-        // 绘制已输入的字符
-        for (let i = 0; i < enemy.typedChars.length; i++) {
-          const charX = x + charWidth * (i + 0.5);
-          ctx.fillStyle = i < enemy.hitChars.length ? "#4caf50" : "#aaaaaa";
+        // 逐个字符绘制，确保水平居中
+        for (let i = 0; i < enemy.word.length; i++) {
+          const charX = startX + i * charWidth;
+
+          // 根据字符状态设置颜色
+          if (i < enemy.hitChars.length) {
+            // 已击中的字符 - 不显示（透明）
+            continue;
+          } else if (i < enemy.typedChars.length) {
+            // 已输入但未击中的字符 - 黄色
+            ctx.fillStyle = "#ffeb3b";
+          } else {
+            // 未输入的字符 - 白色
+            ctx.fillStyle = "#ffffff";
+          }
+
+          // 绘制字符
           ctx.fillText(enemy.word[i], charX, enemy.position.y);
         }
 
-        // 绘制未输入的字符
-        for (let i = enemy.typedChars.length; i < enemy.word.length; i++) {
-          const charX = x + charWidth * (i + 0.5);
-          ctx.fillStyle = "#ffffff";
-          ctx.fillText(enemy.word[i], charX, enemy.position.y);
-        }
+        // 重置阴影
+        ctx.shadowColor = "transparent";
+        ctx.shadowBlur = 0;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 0;
       });
 
       // 绘制爆炸效果
@@ -882,11 +927,38 @@ const CanvasGame: React.FC = () => {
         // 约60fps
         // 生成敌人
         if (
-          currentTime - gameState.current.lastEnemyTime >=
+          currentTime - gameState.current.lastEnemyTime >
           GAME_CONFIG.ENEMY_SPAWN_INTERVAL
         ) {
-          spawnEnemy();
-          gameState.current.lastEnemyTime = currentTime;
+          // 随机选择一个单词
+          const wordIndex = Math.floor(
+            Math.random() * GAME_CONFIG.WORDS.length
+          );
+          const word = GAME_CONFIG.WORDS[wordIndex];
+
+          // 计算敌人宽度
+          const ctx = canvas.getContext("2d");
+          if (ctx) {
+            ctx.font = "16px monospace";
+            const wordWidth = ctx.measureText(word).width + 20; // 添加一些内边距
+
+            // 随机生成敌人的水平位置
+            const x =
+              Math.random() * (canvas.width - wordWidth) + wordWidth / 2;
+
+            // 创建新敌人
+            gameState.current.enemies.push({
+              word,
+              typedChars: "",
+              hitChars: "",
+              position: { x, y: 0 },
+              width: wordWidth,
+              speed: GAME_CONFIG.ENEMY_SPEED * difficultyFactor,
+            });
+
+            // 更新最后一次生成敌人的时间
+            gameState.current.lastEnemyTime = currentTime;
+          }
         }
 
         // 更新子弹位置
@@ -946,7 +1018,7 @@ const CanvasGame: React.FC = () => {
                 // 使用较小的爆炸效果
                 createExplosion(
                   { x: charX, y: charY },
-                  0.5, // 尺寸为正常爆炸的一半
+                  0.3, // 尺寸更小，从0.5减小到0.3
                   true // 使用黄色系
                 );
 
