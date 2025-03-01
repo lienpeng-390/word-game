@@ -96,6 +96,15 @@ const CanvasGame: React.FC = () => {
     loaded: false,
   });
 
+  // 在组件顶部添加音频资源状态
+  const [sounds, setSounds] = useState<{
+    shootSound: HTMLAudioElement | null;
+    loaded: boolean;
+  }>({
+    shootSound: null,
+    loaded: false,
+  });
+
   // 在组件挂载时加载图片资源
   useEffect(() => {
     // 创建图片对象
@@ -117,6 +126,53 @@ const CanvasGame: React.FC = () => {
       // 清理资源
       bulletImage.onload = null;
     };
+  }, []);
+
+  // 在组件挂载时加载音频资源
+  useEffect(() => {
+    try {
+      // 创建音频对象
+      const shootSound = new Audio(
+        `${(import.meta as any).env.BASE_URL}biu.mp3`
+      );
+
+      // 设置音频属性
+      shootSound.preload = "auto"; // 预加载
+      shootSound.volume = 0.5; // 设置音量
+
+      // 预加载音频
+      shootSound.load();
+
+      // 音频加载完成后更新状态
+      shootSound.oncanplaythrough = () => {
+        console.log("音频加载完成");
+        setSounds({
+          shootSound,
+          loaded: true,
+        });
+      };
+
+      // 处理加载错误
+      shootSound.onerror = (e) => {
+        console.error("音频加载失败:", e);
+      };
+
+      // 立即设置音频对象，不等待加载完成
+      setSounds({
+        shootSound,
+        loaded: false,
+      });
+
+      return () => {
+        // 清理资源
+        if (shootSound) {
+          shootSound.oncanplaythrough = null;
+          shootSound.onerror = null;
+        }
+      };
+    } catch (error) {
+      console.error("音频初始化失败:", error);
+    }
   }, []);
 
   // 初始化Canvas - 进一步调整安全线和炮台位置
@@ -268,6 +324,9 @@ const CanvasGame: React.FC = () => {
           speed: GAME_CONFIG.BULLET_SPEED * 2,
         });
 
+        // 播放发射音效
+        playShootSound();
+
         // 3. 添加自动击中功能 - 如果打字速度快，直接更新hitChars
         if (activeEnemy.hitChars.length < activeEnemy.typedChars.length - 2) {
           // 如果已击中字符落后已输入字符2个以上，直接更新
@@ -275,51 +334,46 @@ const CanvasGame: React.FC = () => {
           activeEnemy.hitChars += activeEnemy.word[charIndex];
 
           // 创建小爆炸效果 - 在自动击中的字符位置
+          const charWidth = activeEnemy.width / activeEnemy.word.length;
           const charX =
             activeEnemy.position.x -
             activeEnemy.width / 2 +
-            charWidth * (charIndex + 0.5);
+            (activeEnemy.width / activeEnemy.word.length) * (charIndex + 0.5);
           const charY = activeEnemy.position.y;
 
           // 使用较小的爆炸效果
           createExplosion(
             { x: charX, y: charY },
-            0.25, // 尺寸更小，从0.4减小到0.25
+            0.25, // 尺寸更小
             true // 使用黄色系
           );
 
-          console.log("【日志】自动击中:", {
-            单词: activeEnemy.word,
-            已输入: activeEnemy.typedChars,
-            已击中: activeEnemy.hitChars,
-          });
+          // 播放发射音效
+          playShootSound();
 
-          // 检查是否完全击中
-          if (
-            activeEnemy.typedChars.length === activeEnemy.word.length &&
-            activeEnemy.hitChars.length === activeEnemy.word.length
-          ) {
-            console.log("【日志】单词自动完全击中，准备移除");
-
-            // 增加完成奖励 - 每个单词完成得1分
+          // 检查单词是否完成
+          if (activeEnemy.hitChars.length === activeEnemy.word.length) {
+            // 单词完成，增加分数
             setScore((prev) => prev + 1);
 
             // 创建黄色爆炸效果
             createExplosion(activeEnemy.position, 1, true);
 
-            // 获取当前活跃敌人的索引
-            const activeIndex = gameState.current.activeEnemyIndex;
+            // 移除完成的敌人
+            const index = gameState.current.activeEnemyIndex;
 
-            // 移除敌人
-            gameState.current.enemies.splice(activeIndex, 1);
+            if (index !== -1) {
+              // 立即从数组中移除敌人
+              gameState.current.enemies.splice(index, 1);
 
-            // 查找下一个未完成的敌人
-            const newActiveIndex = gameState.current.enemies.findIndex(
-              (e) => e.typedChars.length < e.word.length
-            );
+              // 查找下一个未完成的敌人
+              const newActiveIndex = gameState.current.enemies.findIndex(
+                (e) => e.typedChars.length < e.word.length
+              );
 
-            gameState.current.activeEnemyIndex = newActiveIndex;
-            console.log("【日志】自动完成后切换活跃敌人:", newActiveIndex);
+              gameState.current.activeEnemyIndex = newActiveIndex;
+              console.log("【日志】自动完成后切换活跃敌人:", newActiveIndex);
+            }
           }
         }
 
@@ -951,7 +1005,9 @@ const CanvasGame: React.FC = () => {
         // 更新子弹位置
         const newBullets: BulletState[] = [];
 
-        for (const bullet of gameState.current.bullets) {
+        for (let i = 0; i < gameState.current.bullets.length; i++) {
+          const bullet = gameState.current.bullets[i];
+
           // 计算新位置
           const newPosition = {
             x: bullet.position.x + Math.cos(bullet.angle) * bullet.speed,
@@ -971,19 +1027,13 @@ const CanvasGame: React.FC = () => {
           // 检查子弹是否击中敌人
           let bulletHit = false;
 
-          for (let i = 0; i < gameState.current.enemies.length; i++) {
-            const enemy = gameState.current.enemies[i];
+          for (let j = 0; j < gameState.current.enemies.length; j++) {
+            const enemy = gameState.current.enemies[j];
 
             if (
               checkBulletCollision({ ...bullet, position: newPosition }, enemy)
             ) {
               bulletHit = true;
-              console.log("【日志】子弹击中:", {
-                敌人索引: i,
-                单词: enemy.word,
-                已输入字符: enemy.typedChars,
-                已击中字符: enemy.hitChars,
-              });
 
               // 只有当下一个字符已经输入但还未击中时才记录击中
               if (
@@ -1005,12 +1055,12 @@ const CanvasGame: React.FC = () => {
                 // 使用较小的爆炸效果
                 createExplosion(
                   { x: charX, y: charY },
-                  0.3, // 尺寸更小，从0.5减小到0.3
+                  0.25, // 尺寸更小
                   true // 使用黄色系
                 );
 
                 console.log("【日志】更新击中后:", {
-                  敌人索引: i,
+                  敌人索引: j,
                   单词: enemy.word,
                   已输入字符: enemy.typedChars,
                   已击中字符: enemy.hitChars,
@@ -1019,53 +1069,41 @@ const CanvasGame: React.FC = () => {
                     enemy.hitChars.length === enemy.word.length,
                 });
 
-                // 检查是否完全击中
-                if (
-                  enemy.typedChars.length === enemy.word.length &&
-                  enemy.hitChars.length === enemy.word.length
-                ) {
+                // 检查单词是否完成
+                if (enemy.hitChars.length === enemy.word.length) {
                   console.log("【日志】单词完全击中，准备移除:", {
-                    敌人索引: i,
+                    敌人索引: j,
                     单词: enemy.word,
                   });
 
-                  // 增加完成奖励 - 每个单词完成得1分
+                  // 增加分数
                   setScore((prev) => prev + 1);
 
                   // 创建黄色爆炸效果 - 整个单词消失的大爆炸
                   createExplosion(enemy.position, 1, true);
 
                   // 移除敌人
-                  gameState.current.enemies.splice(i, 1);
-                  console.log(
-                    "【日志】敌人已移除，剩余敌人:",
-                    gameState.current.enemies.length
-                  );
+                  gameState.current.enemies.splice(j, 1);
 
                   // 调整活跃敌人索引
-                  if (i === gameState.current.activeEnemyIndex) {
+                  if (j === gameState.current.activeEnemyIndex) {
+                    // 查找下一个未完成的敌人
                     const newActiveIndex = gameState.current.enemies.findIndex(
                       (e) => e.typedChars.length < e.word.length
                     );
+
                     gameState.current.activeEnemyIndex = newActiveIndex;
-                    console.log(
-                      "【日志】调整活跃敌人索引:",
-                      gameState.current.activeEnemyIndex
-                    );
-                  } else if (i < gameState.current.activeEnemyIndex) {
+                  } else if (j < gameState.current.activeEnemyIndex) {
+                    // 如果移除的敌人在活跃敌人之前，需要调整索引
                     gameState.current.activeEnemyIndex--;
-                    console.log(
-                      "【日志】调整活跃敌人索引:",
-                      gameState.current.activeEnemyIndex
-                    );
                   }
 
-                  i--; // 调整循环索引
+                  j--; // 调整循环索引
                 }
               }
             }
 
-            break; // 子弹已击中，不再检查其他敌人
+            break;
           }
 
           // 如果子弹没有击中任何敌人，保留它
@@ -1275,6 +1313,24 @@ const CanvasGame: React.FC = () => {
   useEffect(() => {
     setDisplayScore(score);
   }, [score]);
+
+  // 播放音效的函数
+  const playShootSound = () => {
+    try {
+      if (sounds.shootSound) {
+        // 克隆音频对象以支持快速连续播放
+        const soundClone = sounds.shootSound.cloneNode(
+          true
+        ) as HTMLAudioElement;
+        soundClone.volume = 0.5; // 设置音量
+        soundClone.play().catch((err) => {
+          console.error("音效播放失败:", err);
+        });
+      }
+    } catch (error) {
+      console.error("播放音效时出错:", error);
+    }
+  };
 
   return (
     <div className={styles.gameContainer}>
