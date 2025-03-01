@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { GAME_CONFIG } from "@/constants/game";
 import styles from "./style.module.css";
+import VirtualKeyboard from "../VirtualKeyboard";
 
 interface Position {
   x: number;
@@ -42,6 +43,7 @@ const CanvasGame: React.FC = () => {
   const [score, setScore] = useState(0);
   const [lives, setLives] = useState(3);
   const [gameOver, setGameOver] = useState(false);
+  const [displayScore, setDisplayScore] = useState(0);
 
   // 游戏状态
   const gameState = useRef({
@@ -74,6 +76,14 @@ const CanvasGame: React.FC = () => {
         alpha: number;
       }[];
     }[],
+    stars: [] as {
+      x: number;
+      y: number;
+      radius: number;
+      brightness: number;
+      twinkleSpeed: number;
+      speed: number;
+    }[],
   });
 
   // 在组件顶部添加图片资源状态
@@ -105,7 +115,7 @@ const CanvasGame: React.FC = () => {
     };
   }, []);
 
-  // 初始化Canvas
+  // 初始化Canvas - 进一步调整安全线和炮台位置
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -122,11 +132,38 @@ const CanvasGame: React.FC = () => {
 
       gameState.current.canvasWidth = width;
       gameState.current.canvasHeight = height;
-      gameState.current.safetyLineY = height * 0.8;
+
+      // 计算虚拟键盘上方的位置
+      // 假设虚拟键盘高度约为165px（根据padding-bottom设置）
+      const keyboardHeight = 165;
+
+      // 设置安全线位置 - 距离键盘20px
+      gameState.current.safetyLineY = height - keyboardHeight - 20;
+
+      // 设置炮台位置 - 底部在安全线以下
+      // 炮台高度约为GAME_CONFIG.PLAYER_HEIGHT
+      const playerHeight = GAME_CONFIG.PLAYER_HEIGHT;
       gameState.current.player.position = {
         x: width / 2,
-        y: height - 50,
+        y: gameState.current.safetyLineY - playerHeight * 0.3, // 让炮台底部在安全线以下
       };
+
+      // 生成星星
+      const stars = [];
+      const starCount = Math.floor((width * height) / 2000);
+
+      for (let i = 0; i < starCount; i++) {
+        stars.push({
+          x: Math.random() * width,
+          y: Math.random() * (height - 200),
+          radius: 0.5 + Math.random() * 1.5,
+          brightness: 0.5 + Math.random() * 0.5,
+          twinkleSpeed: 0.001 + Math.random() * 0.005,
+          speed: 0.05 + Math.random() * 0.15,
+        });
+      }
+
+      gameState.current.stars = stars;
     };
 
     updateCanvasSize();
@@ -141,6 +178,159 @@ const CanvasGame: React.FC = () => {
   useEffect(() => {
     startGame();
   }, []);
+
+  // 计算两点之间的角度 - 将函数移到组件级别
+  const calculateAngle = (from: Position, to: Position) => {
+    return Math.atan2(to.y - from.y, to.x - from.x);
+  };
+
+  // 将 handleKeyPress 函数移到 useEffect 外部，使其可以在整个组件中访问
+  const handleKeyPress = (e: KeyboardEvent) => {
+    if (gameStatus !== "playing") return;
+
+    if (e.key.length === 1 && /[a-z]/i.test(e.key)) {
+      const char = e.key.toLowerCase();
+
+      const activeIndex = gameState.current.activeEnemyIndex;
+      if (
+        activeIndex === -1 ||
+        activeIndex >= gameState.current.enemies.length
+      ) {
+        return;
+      }
+
+      const activeEnemy = gameState.current.enemies[activeIndex];
+
+      // 检查活跃敌人是否已超过安全线
+      if (activeEnemy.position.y >= gameState.current.safetyLineY) {
+        // 查找下一个未超过安全线的敌人
+        const newActiveIndex = gameState.current.enemies.findIndex(
+          (e, idx) =>
+            idx !== activeIndex &&
+            e.position.y < gameState.current.safetyLineY &&
+            e.typedChars.length < e.word.length
+        );
+
+        if (newActiveIndex !== -1) {
+          gameState.current.activeEnemyIndex = newActiveIndex;
+          console.log("【日志】切换到未超过安全线的敌人:", newActiveIndex);
+
+          // 递归调用以处理当前按键
+          handleKeyPress(e);
+          return;
+        }
+      }
+
+      if (activeEnemy.word[activeEnemy.typedChars.length] === char) {
+        // 更新已输入的字符
+        activeEnemy.typedChars += char;
+        console.log("【日志】输入字符:", {
+          字符: char,
+          单词: activeEnemy.word,
+          已输入: activeEnemy.typedChars,
+        });
+
+        // 发射子弹
+        const bulletStartPos = {
+          x: gameState.current.player.position.x,
+          y:
+            gameState.current.player.position.y -
+            gameState.current.player.height / 2,
+        };
+
+        const charWidth = activeEnemy.width / activeEnemy.word.length;
+        const targetCharIndex = activeEnemy.hitChars.length;
+        const targetCharX =
+          activeEnemy.position.x -
+          activeEnemy.width / 2 +
+          charWidth * (targetCharIndex + 0.5);
+
+        const targetPos = {
+          x: targetCharX,
+          y: activeEnemy.position.y,
+        };
+
+        // 现在可以使用 calculateAngle 函数
+        const angle = calculateAngle(bulletStartPos, targetPos);
+        // 修正炮台旋转方向 - 使炮管指向目标
+        gameState.current.player.rotation = angle - Math.PI / 2; // 减去90度，使炮管指向目标
+
+        // 创建子弹
+        gameState.current.bullets.push({
+          position: bulletStartPos,
+          targetPosition: targetPos,
+          angle: angle,
+          radius: 6,
+          speed: GAME_CONFIG.BULLET_SPEED * 2,
+        });
+
+        // 3. 添加自动击中功能 - 如果打字速度快，直接更新hitChars
+        if (activeEnemy.hitChars.length < activeEnemy.typedChars.length - 2) {
+          // 如果已击中字符落后已输入字符2个以上，直接更新
+          const charIndex = activeEnemy.hitChars.length;
+          activeEnemy.hitChars += activeEnemy.word[charIndex];
+
+          // 创建小爆炸效果 - 在自动击中的字符位置
+          const charX =
+            activeEnemy.position.x -
+            activeEnemy.width / 2 +
+            charWidth * (charIndex + 0.5);
+          const charY = activeEnemy.position.y;
+
+          // 使用较小的爆炸效果
+          createExplosion(
+            { x: charX, y: charY },
+            0.4, // 尺寸更小
+            true // 使用黄色系
+          );
+
+          console.log("【日志】自动击中:", {
+            单词: activeEnemy.word,
+            已输入: activeEnemy.typedChars,
+            已击中: activeEnemy.hitChars,
+          });
+
+          // 检查是否完全击中
+          if (
+            activeEnemy.typedChars.length === activeEnemy.word.length &&
+            activeEnemy.hitChars.length === activeEnemy.word.length
+          ) {
+            console.log("【日志】单词自动完全击中，准备移除");
+
+            // 增加完成奖励 - 每个单词完成得1分
+            setScore((prev) => prev + 1);
+
+            // 创建黄色爆炸效果
+            createExplosion(activeEnemy.position, 1, true);
+
+            // 获取当前活跃敌人的索引
+            const activeIndex = gameState.current.activeEnemyIndex;
+
+            // 移除敌人
+            gameState.current.enemies.splice(activeIndex, 1);
+
+            // 查找下一个未完成的敌人
+            const newActiveIndex = gameState.current.enemies.findIndex(
+              (e) => e.typedChars.length < e.word.length
+            );
+
+            gameState.current.activeEnemyIndex = newActiveIndex;
+            console.log("【日志】自动完成后切换活跃敌人:", newActiveIndex);
+          }
+        }
+
+        // 如果单词已经完全输入，查找下一个未完成的敌人
+        if (activeEnemy.typedChars.length === activeEnemy.word.length) {
+          const newActiveIndex = gameState.current.enemies.findIndex(
+            (e, idx) =>
+              idx !== activeIndex && e.typedChars.length < e.word.length
+          );
+          gameState.current.activeEnemyIndex = newActiveIndex;
+          console.log("【日志】单词输入完成，新活跃敌人索引:", newActiveIndex);
+        }
+      }
+    }
+  };
 
   // 游戏循环
   useEffect(() => {
@@ -182,11 +372,6 @@ const CanvasGame: React.FC = () => {
       }
     };
 
-    // 计算两点之间的角度
-    const calculateAngle = (from: Position, to: Position) => {
-      return Math.atan2(to.y - from.y, to.x - from.x);
-    };
-
     // 检查子弹碰撞
     const checkBulletCollision = (bullet: BulletState, enemy: WordEnemy) => {
       const bulletX = bullet.position.x;
@@ -224,6 +409,132 @@ const CanvasGame: React.FC = () => {
     const drawGame = () => {
       // 清空画布
       ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // 绘制星空背景 - 更高清的效果
+      ctx.fillStyle = "#000020"; // 深蓝色背景
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // 绘制远处的星云 - 更清晰的效果
+      // 星云1 - 紫色
+      const nebula1 = ctx.createRadialGradient(
+        canvas.width * 0.3,
+        canvas.height * 0.4,
+        0,
+        canvas.width * 0.3,
+        canvas.height * 0.4,
+        canvas.width * 0.5
+      );
+      nebula1.addColorStop(0, "rgba(120, 70, 170, 0.12)");
+      nebula1.addColorStop(0.5, "rgba(100, 50, 150, 0.08)");
+      nebula1.addColorStop(1, "rgba(0, 0, 30, 0)");
+
+      ctx.fillStyle = nebula1;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // 星云2 - 蓝色
+      const nebula2 = ctx.createRadialGradient(
+        canvas.width * 0.7,
+        canvas.height * 0.6,
+        0,
+        canvas.width * 0.7,
+        canvas.height * 0.6,
+        canvas.width * 0.6
+      );
+      nebula2.addColorStop(0, "rgba(70, 120, 170, 0.12)");
+      nebula2.addColorStop(0.5, "rgba(50, 100, 150, 0.08)");
+      nebula2.addColorStop(1, "rgba(0, 0, 30, 0)");
+
+      ctx.fillStyle = nebula2;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // 绘制并更新星星位置 - 更快的飞行速度和更清晰的星星
+      const currentTime = performance.now();
+      gameState.current.stars.forEach((star, index) => {
+        // 更新星星位置 - 让星星向下移动得更快，增强飞行感
+        star.y += star.speed * 3; // 增加速度
+
+        // 如果星星移出屏幕底部，将其重置到顶部
+        if (star.y > canvas.height) {
+          star.y = 0;
+          star.x = Math.random() * canvas.width;
+          // 随机更新速度，使流动更自然
+          star.speed = 0.1 + Math.random() * 0.3; // 增加基础速度
+        }
+
+        // 星星闪烁效果
+        const brightness =
+          star.brightness *
+          (0.7 + 0.3 * Math.sin(currentTime * star.twinkleSpeed));
+
+        // 根据速度调整星星颜色 - 更快的星星更亮/更蓝
+        const hue = 210 + ((star.speed * 100) % 50);
+        const saturation = 70 + ((star.speed * 100) % 30);
+
+        // 绘制更清晰的星星
+        const starRadius = star.radius * (1 + star.speed); // 速度快的星星更大
+
+        // 使用锐利的星星绘制方法
+        if (starRadius > 1.5) {
+          // 大星星使用十字星形状
+          ctx.fillStyle = `hsla(${hue}, ${saturation}%, 90%, ${brightness})`;
+
+          // 水平线
+          ctx.fillRect(
+            star.x - starRadius * 1.5,
+            star.y - starRadius * 0.5,
+            starRadius * 3,
+            starRadius
+          );
+
+          // 垂直线
+          ctx.fillRect(
+            star.x - starRadius * 0.5,
+            star.y - starRadius * 1.5,
+            starRadius,
+            starRadius * 3
+          );
+
+          // 中心点
+          ctx.beginPath();
+          ctx.arc(star.x, star.y, starRadius, 0, Math.PI * 2);
+          ctx.fill();
+        } else {
+          // 小星星使用圆形
+          ctx.fillStyle = `hsla(${hue}, ${saturation}%, 90%, ${brightness})`;
+          ctx.beginPath();
+          ctx.arc(star.x, star.y, starRadius, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        // 为较大的星星添加光晕效果和拖尾效果
+        if (starRadius > 1.8) {
+          // 光晕
+          const glow = ctx.createRadialGradient(
+            star.x,
+            star.y,
+            0,
+            star.x,
+            star.y,
+            starRadius * 5
+          );
+          glow.addColorStop(0, `rgba(255, 255, 255, ${brightness * 0.7})`);
+          glow.addColorStop(0.5, `rgba(180, 220, 255, ${brightness * 0.3})`);
+          glow.addColorStop(1, "rgba(100, 180, 255, 0)");
+
+          ctx.fillStyle = glow;
+          ctx.beginPath();
+          ctx.arc(star.x, star.y, starRadius * 5, 0, Math.PI * 2);
+          ctx.fill();
+
+          // 拖尾效果 - 更长的拖尾
+          ctx.beginPath();
+          ctx.moveTo(star.x, star.y);
+          ctx.lineTo(star.x, star.y - star.speed * 20);
+          ctx.strokeStyle = `rgba(255, 255, 255, ${brightness * 0.5})`;
+          ctx.lineWidth = starRadius * 0.8;
+          ctx.stroke();
+        }
+      });
 
       // 绘制安全线
       ctx.beginPath();
@@ -265,6 +576,13 @@ const CanvasGame: React.FC = () => {
       ctx.beginPath();
       ctx.arc(0, cylinderHeight / 2, cylinderWidth / 2, 0, Math.PI, false);
       ctx.fill();
+
+      // 添加一些装饰
+      ctx.strokeStyle = "#4fa8c7";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(0, 0, cylinderWidth * 0.3, 0, Math.PI * 2);
+      ctx.stroke();
 
       // 恢复绘图状态
       ctx.restore();
@@ -414,16 +732,38 @@ const CanvasGame: React.FC = () => {
           explosion.radius
         );
 
-        gradient.addColorStop(0, `rgba(255, 255, 255, ${explosion.alpha})`);
-        gradient.addColorStop(
-          0.3,
-          `rgba(255, 200, 100, ${explosion.alpha * 0.8})`
-        );
-        gradient.addColorStop(
-          0.7,
-          `rgba(255, 100, 50, ${explosion.alpha * 0.5})`
-        );
-        gradient.addColorStop(1, `rgba(255, 50, 0, 0)`);
+        // 使用爆炸对象中存储的颜色
+        const baseColor = explosion.color; // 这里使用存储的颜色
+
+        // 根据颜色确定是黄色系还是红色系
+        const isYellow = baseColor === "#ffeb3b";
+
+        // 创建适合颜色的渐变
+        if (isYellow) {
+          // 黄色系渐变
+          gradient.addColorStop(0, `rgba(255, 255, 255, ${explosion.alpha})`);
+          gradient.addColorStop(
+            0.3,
+            `rgba(255, 235, 100, ${explosion.alpha * 0.8})`
+          );
+          gradient.addColorStop(
+            0.7,
+            `rgba(255, 180, 50, ${explosion.alpha * 0.5})`
+          );
+          gradient.addColorStop(1, `rgba(255, 100, 0, 0)`);
+        } else {
+          // 红色系渐变
+          gradient.addColorStop(0, `rgba(255, 255, 255, ${explosion.alpha})`);
+          gradient.addColorStop(
+            0.3,
+            `rgba(255, 100, 100, ${explosion.alpha * 0.8})`
+          );
+          gradient.addColorStop(
+            0.7,
+            `rgba(255, 50, 50, ${explosion.alpha * 0.5})`
+          );
+          gradient.addColorStop(1, `rgba(200, 0, 0, 0)`);
+        }
 
         ctx.beginPath();
         ctx.arc(
@@ -440,7 +780,7 @@ const CanvasGame: React.FC = () => {
         explosion.particles.forEach((particle) => {
           ctx.beginPath();
           ctx.arc(particle.x, particle.y, particle.radius, 0, Math.PI * 2);
-          ctx.fillStyle = `rgba(255, 200, 100, ${particle.alpha})`;
+          ctx.fillStyle = particle.color; // 使用粒子自己的颜色
           ctx.fill();
         });
 
@@ -462,13 +802,75 @@ const CanvasGame: React.FC = () => {
         }
       });
 
-      // 绘制分数和生命值
-      ctx.fillStyle = "#ffffff";
-      ctx.font = "16px Arial";
-      ctx.textAlign = "left";
-      ctx.textBaseline = "top";
-      ctx.fillText(`生命值: ${lives}`, 10, 10);
-      ctx.fillText(`分数: ${score}`, 10, 30);
+      // 绘制UI - 分数和生命值
+      // 设置UI区域 - 确保水平居中
+      const uiHeight = 50;
+      const uiY = 25; // 调整垂直位置
+
+      // 计算UI元素的位置
+      const heartSize = 25;
+      const heartSpacing = 10;
+      const totalHeartsWidth = 3 * heartSize + 2 * heartSpacing;
+
+      // 绘制生命值 - 红心
+      const heartsY = uiY;
+
+      // 绘制红心函数
+      const drawHeart = (
+        x: number,
+        y: number,
+        size: number,
+        filled: boolean
+      ) => {
+        const halfSize = size / 2;
+
+        ctx.save();
+        ctx.beginPath();
+
+        // 绘制心形路径
+        ctx.moveTo(x, y + halfSize / 4);
+
+        // 左半部分
+        ctx.bezierCurveTo(
+          x - halfSize / 2,
+          y - halfSize / 2,
+          x - size,
+          y,
+          x,
+          y + size * 0.7
+        );
+
+        // 右半部分
+        ctx.bezierCurveTo(
+          x + size,
+          y,
+          x + halfSize / 2,
+          y - halfSize / 2,
+          x,
+          y + halfSize / 4
+        );
+
+        // 填充或描边
+        if (filled) {
+          ctx.fillStyle = "#ff3366";
+          ctx.fill();
+        } else {
+          ctx.strokeStyle = "#ff3366";
+          ctx.lineWidth = 2;
+          ctx.stroke();
+          ctx.fillStyle = "rgba(255, 100, 100, 0.2)";
+          ctx.fill();
+        }
+
+        ctx.restore();
+      };
+
+      // 绘制所有红心
+      for (let i = 0; i < 3; i++) {
+        const heartX = 20 + i * (heartSize + heartSpacing);
+        const filled = i < lives;
+        drawHeart(heartX, heartsY, heartSize, filled);
+      }
     };
 
     // 游戏主循环
@@ -507,7 +909,7 @@ const CanvasGame: React.FC = () => {
             continue; // 跳过这个子弹
           }
 
-          // 检查碰撞
+          // 检查子弹是否击中敌人
           let bulletHit = false;
 
           for (let i = 0; i < gameState.current.enemies.length; i++) {
@@ -530,7 +932,23 @@ const CanvasGame: React.FC = () => {
                 enemy.hitChars.length < enemy.word.length
               ) {
                 // 更新敌人状态
-                enemy.hitChars += enemy.word[enemy.hitChars.length];
+                const charIndex = enemy.hitChars.length;
+                enemy.hitChars += enemy.word[charIndex];
+
+                // 创建小爆炸效果 - 在击中的字符位置
+                const charWidth = enemy.width / enemy.word.length;
+                const charX =
+                  enemy.position.x -
+                  enemy.width / 2 +
+                  charWidth * (charIndex + 0.5);
+                const charY = enemy.position.y;
+
+                // 使用较小的爆炸效果
+                createExplosion(
+                  { x: charX, y: charY },
+                  0.5, // 尺寸为正常爆炸的一半
+                  true // 使用黄色系
+                );
 
                 console.log("【日志】更新击中后:", {
                   敌人索引: i,
@@ -542,9 +960,6 @@ const CanvasGame: React.FC = () => {
                     enemy.hitChars.length === enemy.word.length,
                 });
 
-                // 更新分数
-                setScore((prev) => prev + 10);
-
                 // 检查是否完全击中
                 if (
                   enemy.typedChars.length === enemy.word.length &&
@@ -555,11 +970,11 @@ const CanvasGame: React.FC = () => {
                     单词: enemy.word,
                   });
 
-                  // 增加完成奖励
-                  setScore((prev) => prev + enemy.word.length * 50);
+                  // 增加完成奖励 - 每个单词完成得1分
+                  setScore((prev) => prev + 1);
 
-                  // 创建爆炸效果
-                  createExplosion(enemy.position);
+                  // 创建黄色爆炸效果 - 整个单词消失的大爆炸
+                  createExplosion(enemy.position, 1, true);
 
                   // 移除敌人
                   gameState.current.enemies.splice(i, 1);
@@ -568,16 +983,17 @@ const CanvasGame: React.FC = () => {
                     gameState.current.enemies.length
                   );
 
-                  // 如果移除的是当前活跃敌人，更新活跃敌人索引
+                  // 调整活跃敌人索引
                   if (i === gameState.current.activeEnemyIndex) {
-                    // 找到第一个未完成的敌人
                     const newActiveIndex = gameState.current.enemies.findIndex(
                       (e) => e.typedChars.length < e.word.length
                     );
                     gameState.current.activeEnemyIndex = newActiveIndex;
-                    console.log("【日志】更新活跃敌人索引:", newActiveIndex);
+                    console.log(
+                      "【日志】调整活跃敌人索引:",
+                      gameState.current.activeEnemyIndex
+                    );
                   } else if (i < gameState.current.activeEnemyIndex) {
-                    // 如果移除的敌人在活跃敌人之前，需要调整索引
                     gameState.current.activeEnemyIndex--;
                     console.log(
                       "【日志】调整活跃敌人索引:",
@@ -588,9 +1004,9 @@ const CanvasGame: React.FC = () => {
                   i--; // 调整循环索引
                 }
               }
-
-              break; // 子弹已击中，不再检查其他敌人
             }
+
+            break; // 子弹已击中，不再检查其他敌人
           }
 
           // 如果子弹没有击中任何敌人，保留它
@@ -614,6 +1030,16 @@ const CanvasGame: React.FC = () => {
             newY >= gameState.current.safetyLineY &&
             enemy.position.y < gameState.current.safetyLineY
           ) {
+            // 在安全线处创建红色爆炸效果
+            createExplosion(
+              {
+                x: enemy.position.x,
+                y: gameState.current.safetyLineY,
+              },
+              1.5,
+              false // 使用红色爆炸效果
+            );
+
             // 扣减生命值
             setLives((prev) => {
               const newLives = prev - 1;
@@ -624,11 +1050,13 @@ const CanvasGame: React.FC = () => {
               return newLives;
             });
 
+            // 移除敌人
+            gameState.current.enemies.splice(i, 1);
+
             // 如果当前活跃敌人超过安全线，切换到下一个未超过安全线的敌人
             if (i === gameState.current.activeEnemyIndex) {
               const newActiveIndex = gameState.current.enemies.findIndex(
                 (e, idx) =>
-                  idx !== i &&
                   e.position.y < gameState.current.safetyLineY &&
                   e.typedChars.length < e.word.length
               );
@@ -637,7 +1065,13 @@ const CanvasGame: React.FC = () => {
                 "【日志】敌人超过安全线，切换活跃敌人:",
                 newActiveIndex
               );
+            } else if (i < gameState.current.activeEnemyIndex) {
+              // 如果移除的敌人在活跃敌人之前，需要调整索引
+              gameState.current.activeEnemyIndex--;
             }
+
+            i--; // 调整循环索引
+            continue; // 跳过后续处理
           }
 
           // 如果敌人超出屏幕底部，移除它
@@ -681,137 +1115,7 @@ const CanvasGame: React.FC = () => {
       animationFrameId = requestAnimationFrame(gameLoop);
     };
 
-    // 处理键盘输入
-    const handleKeyPress = (e: KeyboardEvent) => {
-      if (e.key.length === 1 && /[a-z]/i.test(e.key)) {
-        const char = e.key.toLowerCase();
-
-        const activeIndex = gameState.current.activeEnemyIndex;
-        if (
-          activeIndex === -1 ||
-          activeIndex >= gameState.current.enemies.length
-        ) {
-          return;
-        }
-
-        const activeEnemy = gameState.current.enemies[activeIndex];
-
-        // 检查活跃敌人是否已超过安全线
-        if (activeEnemy.position.y >= gameState.current.safetyLineY) {
-          // 查找下一个未超过安全线的敌人
-          const newActiveIndex = gameState.current.enemies.findIndex(
-            (e, idx) =>
-              idx !== activeIndex &&
-              e.position.y < gameState.current.safetyLineY &&
-              e.typedChars.length < e.word.length
-          );
-
-          if (newActiveIndex !== -1) {
-            gameState.current.activeEnemyIndex = newActiveIndex;
-            console.log("【日志】切换到未超过安全线的敌人:", newActiveIndex);
-
-            // 递归调用以处理当前按键
-            handleKeyPress(e);
-            return;
-          }
-        }
-
-        if (activeEnemy.word[activeEnemy.typedChars.length] === char) {
-          // 更新已输入的字符
-          activeEnemy.typedChars += char;
-          console.log("【日志】输入字符:", {
-            字符: char,
-            单词: activeEnemy.word,
-            已输入: activeEnemy.typedChars,
-          });
-
-          // 发射子弹
-          const bulletStartPos = {
-            x: gameState.current.player.position.x,
-            y:
-              gameState.current.player.position.y -
-              gameState.current.player.height / 2,
-          };
-
-          const charWidth = activeEnemy.width / activeEnemy.word.length;
-          const targetCharIndex = activeEnemy.hitChars.length;
-          const targetCharX =
-            activeEnemy.position.x -
-            activeEnemy.width / 2 +
-            charWidth * (targetCharIndex + 0.5);
-
-          const targetPos = {
-            x: targetCharX,
-            y: activeEnemy.position.y,
-          };
-
-          // 计算角度并更新玩家旋转
-          const angle = calculateAngle(bulletStartPos, targetPos);
-          gameState.current.player.rotation = angle - Math.PI / 2; // 减去90度，使圆柱体垂直于射击方向
-
-          // 创建子弹
-          gameState.current.bullets.push({
-            position: bulletStartPos,
-            targetPosition: targetPos,
-            angle: angle,
-            radius: 6,
-            speed: GAME_CONFIG.BULLET_SPEED * 2,
-          });
-
-          // 3. 添加自动击中功能 - 如果打字速度快，直接更新hitChars
-          // 这样即使子弹没有物理上击中，单词也会被正确处理
-          if (activeEnemy.hitChars.length < activeEnemy.typedChars.length - 2) {
-            // 如果已击中字符落后已输入字符2个以上，直接更新
-            activeEnemy.hitChars +=
-              activeEnemy.word[activeEnemy.hitChars.length];
-            console.log("【日志】自动击中:", {
-              单词: activeEnemy.word,
-              已输入: activeEnemy.typedChars,
-              已击中: activeEnemy.hitChars,
-            });
-
-            // 检查是否完全击中
-            if (
-              activeEnemy.typedChars.length === activeEnemy.word.length &&
-              activeEnemy.hitChars.length === activeEnemy.word.length
-            ) {
-              console.log("【日志】单词自动完全击中，准备移除");
-
-              // 增加完成奖励
-              setScore((prev) => prev + activeEnemy.word.length * 50);
-
-              // 创建爆炸效果
-              createExplosion(activeEnemy.position);
-
-              // 移除敌人
-              const enemyIndex = activeIndex;
-              gameState.current.enemies.splice(enemyIndex, 1);
-
-              // 更新活跃敌人索引
-              const newActiveIndex = gameState.current.enemies.findIndex(
-                (e, idx) =>
-                  idx !== activeIndex && e.typedChars.length < e.word.length
-              );
-              gameState.current.activeEnemyIndex = newActiveIndex;
-            }
-          }
-
-          // 如果单词已经完全输入，查找下一个未完成的敌人
-          if (activeEnemy.typedChars.length === activeEnemy.word.length) {
-            const newActiveIndex = gameState.current.enemies.findIndex(
-              (e, idx) =>
-                idx !== activeIndex && e.typedChars.length < e.word.length
-            );
-            gameState.current.activeEnemyIndex = newActiveIndex;
-            console.log(
-              "【日志】单词输入完成，新活跃敌人索引:",
-              newActiveIndex
-            );
-          }
-        }
-      }
-    };
-
+    // 使用外部定义的 handleKeyPress 函数
     window.addEventListener("keydown", handleKeyPress);
     gameLoop();
 
@@ -859,23 +1163,34 @@ const CanvasGame: React.FC = () => {
     setGameStatus("playing");
   };
 
-  // 添加创建爆炸效果的函数
-  const createExplosion = (position: Position) => {
+  // 修改创建爆炸效果的函数，调整颜色参数
+  const createExplosion = (
+    position: Position,
+    size: number = 1,
+    isHit: boolean = false
+  ) => {
     const particles = [];
-    const particleCount = 20 + Math.floor(Math.random() * 10);
+    const particleCount = 20 + Math.floor(Math.random() * 10 * size);
+
+    // 根据是否是击中效果选择不同的颜色
+    // 击中效果使用黄色系(50)，安全线碰撞使用红色系(0)
+    const baseHue = isHit ? 50 : 0;
+    const baseColor = isHit ? "#ffeb3b" : "#ff3333"; // 黄色 vs 红色
 
     // 创建爆炸粒子
     for (let i = 0; i < particleCount; i++) {
       const angle = Math.random() * Math.PI * 2;
-      const speed = 1 + Math.random() * 3;
+      const speed = (1 + Math.random() * 3) * size;
 
       particles.push({
         x: position.x,
         y: position.y,
         vx: Math.cos(angle) * speed,
         vy: Math.sin(angle) * speed,
-        radius: 2 + Math.random() * 3,
-        color: `hsl(${30 + Math.random() * 30}, 100%, 70%)`,
+        radius: (2 + Math.random() * 3) * size,
+        color: `hsl(${baseHue + Math.random() * 30}, 100%, ${
+          isHit ? 70 : 60
+        }%)`,
         alpha: 1,
       });
     }
@@ -883,17 +1198,42 @@ const CanvasGame: React.FC = () => {
     // 添加爆炸效果到数组
     gameState.current.explosions.push({
       position: { ...position },
-      radius: 10,
-      color: "#ffeb3b",
+      radius: 10 * size,
+      color: baseColor,
       alpha: 1,
-      maxRadius: 40 + Math.random() * 20,
+      maxRadius: (40 + Math.random() * 20) * size,
       particles,
     });
   };
 
+  // 在分数变化时更新显示分数
+  useEffect(() => {
+    setDisplayScore(score);
+  }, [score]);
+
   return (
     <div className={styles.gameContainer}>
       <canvas ref={canvasRef} className={styles.gameCanvas} />
+
+      {/* 分数显示 */}
+      {gameStatus === "playing" && (
+        <div className={styles.scoreDisplay}>
+          <span className={styles.scoreValue}>{displayScore}</span>
+        </div>
+      )}
+
+      {gameStatus === "playing" && (
+        <VirtualKeyboard
+          onKeyPress={(key) => {
+            // 创建一个模拟的键盘事件
+            const event = {
+              key,
+              preventDefault: () => {},
+            } as KeyboardEvent;
+            handleKeyPress(event);
+          }}
+        />
+      )}
 
       {gameStatus === "idle" || gameStatus === "gameOver" ? (
         <div className={styles.gameOverlay}>

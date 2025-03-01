@@ -1,0 +1,56 @@
+.virtualKeyboard {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  padding: 10px 5px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  z-index: 50;
+}
+
+.keyboardRow {
+  display: flex;
+  justify-content: center;
+  gap: 5px;
+}
+
+.key {
+  min-width: 30px;
+  height: 40px;
+  background-color: #333;
+  color: white;
+  border: 1px solid #555;
+  border-radius: 5px;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  user-select: none;
+  flex: 1;
+  padding: 0 5px;
+  text-transform: uppercase;
+}
+
+.key:active {
+  background-color: #555;
+}
+
+/* 适配不同屏幕尺寸 */
+@media (min-width: 768px) {
+  .key {
+    min-width: 40px;
+    height: 45px;
+    font-size: 18px;
+  }
+}
+
+@media (max-width: 320px) {
+  .key {
+    min-width: 25px;
+    height: 35px;
+    font-size: 14px;
+  }
+}
