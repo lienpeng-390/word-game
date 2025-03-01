@@ -176,8 +176,8 @@ const CanvasGame: React.FC = () => {
         console.error(`${name}音频加载失败:`, e);
       };
 
-      shootSound.onerror = (e) => handleError(e, "射击");
-      explosionSound.onerror = (e) => handleError(e, "爆炸");
+      shootSound.onerror = (e) => handleError(e as Event, "射击");
+      explosionSound.onerror = (e) => handleError(e as Event, "爆炸");
 
       // 立即设置音频对象，不等待加载完成
       setSounds({
@@ -361,7 +361,7 @@ const CanvasGame: React.FC = () => {
           activeEnemy.hitChars += activeEnemy.word[charIndex];
 
           // 创建小爆炸效果 - 在自动击中的字符位置
-          const charWidth = activeEnemy.width / activeEnemy.word.length;
+          // const charWidth = activeEnemy.width / activeEnemy.word.length;
           const charX =
             activeEnemy.position.x -
             activeEnemy.width / 2 +
