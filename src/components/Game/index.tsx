@@ -41,6 +41,7 @@ const CanvasGame: React.FC = () => {
   const [gameStatus, setGameStatus] = useState<GameStatus>("idle");
   const [score, setScore] = useState(0);
   const [lives, setLives] = useState(3);
+  const [gameOver, setGameOver] = useState(false);
 
   // 游戏状态
   const gameState = useRef({
@@ -89,6 +90,11 @@ const CanvasGame: React.FC = () => {
     return () => {
       window.removeEventListener("resize", updateCanvasSize);
     };
+  }, []);
+
+  // 在组件挂载时自动开始游戏
+  useEffect(() => {
+    startGame();
   }, []);
 
   // 游戏循环
@@ -429,9 +435,25 @@ const CanvasGame: React.FC = () => {
               const newLives = prev - 1;
               if (newLives <= 0) {
                 setGameStatus("gameOver");
+                handleGameOver(); // 调用游戏结束处理函数
               }
               return newLives;
             });
+
+            // 如果当前活跃敌人超过安全线，切换到下一个未超过安全线的敌人
+            if (i === gameState.current.activeEnemyIndex) {
+              const newActiveIndex = gameState.current.enemies.findIndex(
+                (e, idx) =>
+                  idx !== i &&
+                  e.position.y < gameState.current.safetyLineY &&
+                  e.typedChars.length < e.word.length
+              );
+              gameState.current.activeEnemyIndex = newActiveIndex;
+              console.log(
+                "【日志】敌人超过安全线，切换活跃敌人:",
+                newActiveIndex
+              );
+            }
           }
 
           // 如果敌人超出屏幕底部，移除它
@@ -489,6 +511,26 @@ const CanvasGame: React.FC = () => {
         }
 
         const activeEnemy = gameState.current.enemies[activeIndex];
+
+        // 检查活跃敌人是否已超过安全线
+        if (activeEnemy.position.y >= gameState.current.safetyLineY) {
+          // 查找下一个未超过安全线的敌人
+          const newActiveIndex = gameState.current.enemies.findIndex(
+            (e, idx) =>
+              idx !== activeIndex &&
+              e.position.y < gameState.current.safetyLineY &&
+              e.typedChars.length < e.word.length
+          );
+
+          if (newActiveIndex !== -1) {
+            gameState.current.activeEnemyIndex = newActiveIndex;
+            console.log("【日志】切换到未超过安全线的敌人:", newActiveIndex);
+
+            // 递归调用以处理当前按键
+            handleKeyPress(e);
+            return;
+          }
+        }
 
         if (activeEnemy.word[activeEnemy.typedChars.length] === char) {
           // 更新已输入的字符
@@ -607,19 +649,49 @@ const CanvasGame: React.FC = () => {
     setGameStatus("playing");
   };
 
+  // 修改游戏结束处理
+  const handleGameOver = () => {
+    setGameOver(true);
+    setGameStatus("gameOver");
+  };
+
+  // 重新开始游戏
+  const restartGame = () => {
+    setGameOver(false);
+    gameState.current = {
+      ...gameState.current,
+      bullets: [],
+      enemies: [],
+      lastEnemyTime: performance.now(),
+      activeEnemyIndex: -1,
+    };
+    setScore(0);
+    setLives(3);
+    setGameStatus("playing");
+  };
+
   return (
     <div className={styles.gameContainer}>
       <canvas ref={canvasRef} className={styles.gameCanvas} />
 
       {gameStatus === "idle" || gameStatus === "gameOver" ? (
         <div className={styles.gameOverlay}>
-          <h2>{gameStatus === "gameOver" ? "游戏结束" : "打字消除游戏"}</h2>
+          <h2>游戏结束</h2>
           {gameStatus === "gameOver" && <p>最终得分: {score}</p>}
-          <button className={styles.gameButton} onClick={startGame}>
-            {gameStatus === "gameOver" ? "重新开始" : "开始游戏"}
-          </button>
         </div>
       ) : null}
+
+      {gameOver && (
+        <div className={styles.gameOverOverlay}>
+          <div className={styles.gameOverContent}>
+            <h2>游戏结束</h2>
+            <p>得分: {score}</p>
+            <button className={styles.restartButton} onClick={restartGame}>
+              重新开始
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
