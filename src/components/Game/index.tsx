@@ -35,7 +35,7 @@ interface BulletState {
 //   rotation: number;
 // }
 
-type GameStatus = "idle" | "playing" | "gameOver";
+type GameStatus = "idle" | "playing" | "gameOver" | "victory";
 
 const CanvasGame: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -85,6 +85,7 @@ const CanvasGame: React.FC = () => {
       twinkleSpeed: number;
       speed: number;
     }[],
+    usedWords: new Set<string>(),
   });
 
   // 在组件顶部添加图片资源状态
@@ -997,39 +998,52 @@ const CanvasGame: React.FC = () => {
         // 生成敌人
         if (
           currentTime - gameState.current.lastEnemyTime >
-          GAME_CONFIG.ENEMY_SPAWN_INTERVAL / Math.sqrt(difficultyFactor) // 随着难度增加，敌人生成间隔减少
+          GAME_CONFIG.ENEMY_SPAWN_INTERVAL / Math.sqrt(difficultyFactor)
         ) {
-          // 随机选择一个单词
-          const wordIndex = Math.floor(
-            Math.random() * GAME_CONFIG.WORDS.length
+          // 获取未使用的单词
+          const availableWords = GAME_CONFIG.WORDS.filter(
+            (word) => !gameState.current.usedWords.has(word)
           );
-          const word = GAME_CONFIG.WORDS[wordIndex];
-          const fontSize = 16;
-          ctx.font = `${fontSize}px monospace`;
-          const wordWidth = ctx.measureText(word).width + 20; // 添加一些内边距
 
-          // 随机生成敌人的水平位置
-          const x =
-            Math.random() * (gameState.current.canvasWidth - wordWidth) +
-            wordWidth / 2;
+          // 检查是否还有可用单词
+          if (availableWords.length > 0) {
+            // 随机选择一个未使用的单词
+            const wordIndex = Math.floor(Math.random() * availableWords.length);
+            const word = availableWords[wordIndex];
 
-          // 创建新敌人 - 使用难度系数调整速度
-          gameState.current.enemies.push({
-            word,
-            typedChars: "",
-            hitChars: "",
-            position: { x, y: 0 },
-            width: wordWidth,
-            height: 30,
-            // 基础速度 * 难度系数 * 随机变化(0.9-1.1)
-            speed:
-              GAME_CONFIG.ENEMY_SPEED *
-              difficultyFactor *
-              (0.9 + Math.random() * 0.2),
-          });
+            // 将单词添加到已使用集合
+            gameState.current.usedWords.add(word);
 
-          // 更新最后一次生成敌人的时间
-          gameState.current.lastEnemyTime = currentTime;
+            const fontSize = 16;
+            ctx.font = `${fontSize}px monospace`;
+            const wordWidth = ctx.measureText(word).width + 20; // 添加一些内边距
+
+            // 随机生成敌人的水平位置
+            const x =
+              Math.random() * (gameState.current.canvasWidth - wordWidth) +
+              wordWidth / 2;
+
+            // 创建新敌人 - 使用难度系数调整速度
+            gameState.current.enemies.push({
+              word,
+              typedChars: "",
+              hitChars: "",
+              position: { x, y: 0 },
+              width: wordWidth,
+              height: 30,
+              // 基础速度 * 难度系数 * 随机变化(0.9-1.1)
+              speed:
+                GAME_CONFIG.ENEMY_SPEED *
+                difficultyFactor *
+                (0.9 + Math.random() * 0.2),
+            });
+
+            // 更新最后一次生成敌人的时间
+            gameState.current.lastEnemyTime = currentTime;
+          } else if (gameState.current.enemies.length === 0) {
+            // 如果没有可用单词且没有敌人，游戏胜利
+            handleVictory();
+          }
         }
 
         // 更新子弹位置
@@ -1174,7 +1188,6 @@ const CanvasGame: React.FC = () => {
             setLives((prev) => {
               const newLives = prev - 1;
               if (newLives <= 0) {
-                setGameStatus("gameOver");
                 handleGameOver(); // 调用游戏结束处理函数
               }
               return newLives;
@@ -1248,6 +1261,14 @@ const CanvasGame: React.FC = () => {
           setDifficultyLevel(newDifficultyLevel);
         }
 
+        // 检查游戏胜利条件
+        if (
+          gameState.current.usedWords.size >= GAME_CONFIG.WORDS.length &&
+          gameState.current.enemies.length === 0
+        ) {
+          handleVictory();
+        }
+
         lastTime = currentTime;
       }
 
@@ -1273,6 +1294,7 @@ const CanvasGame: React.FC = () => {
       lastEnemyTime: performance.now(),
       activeEnemyIndex: -1,
       explosions: [],
+      usedWords: new Set<string>(),
     };
 
     setScore(0);
@@ -1296,6 +1318,7 @@ const CanvasGame: React.FC = () => {
       lastEnemyTime: performance.now(),
       activeEnemyIndex: -1,
       explosions: [],
+      usedWords: new Set<string>(),
     };
     setScore(0);
     setLives(3);
@@ -1384,6 +1407,12 @@ const CanvasGame: React.FC = () => {
     }
   };
 
+  // 添加游戏胜利处理函数
+  const handleVictory = () => {
+    setGameOver(true); // 复用游戏结束的状态
+    setGameStatus("victory");
+  };
+
   return (
     <div className={styles.gameContainer}>
       <canvas ref={canvasRef} className={styles.gameCanvas} />
@@ -1427,8 +1456,18 @@ const CanvasGame: React.FC = () => {
       {gameOver && (
         <div className={styles.gameOverOverlay}>
           <div className={styles.gameOverContent}>
-            <h2>游戏结束</h2>
-            <p>得分: {score}</p>
+            {gameStatus === "victory" ? (
+              <>
+                <h2 className={styles.victoryTitle}>游戏胜利！</h2>
+                <p>恭喜你完成了所有单词！</p>
+                <p>最终得分: {score}</p>
+              </>
+            ) : (
+              <>
+                <h2>游戏结束</h2>
+                <p>得分: {score}</p>
+              </>
+            )}
             <button className={styles.restartButton} onClick={restartGame}>
               重新开始
             </button>
