@@ -100,7 +100,10 @@ const CanvasGame: React.FC = () => {
   useEffect(() => {
     // 创建图片对象
     const bulletImage = new Image();
-    bulletImage.src = "/assets/energy-ball.png"; // 这里需要在public/assets目录下放置能量球图片
+    // 使用类型断言避免 TypeScript 错误
+    bulletImage.src = `${
+      (import.meta as any).env.BASE_URL
+    }assets/energy-ball.png`;
 
     // 图片加载完成后更新状态
     bulletImage.onload = () => {

@@ -1,6 +1,6 @@
 node_modules
 # dist
-dist-ssr
+# dist-ssr
 *.local
 
 # Editor directories and files

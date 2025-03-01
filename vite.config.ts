@@ -4,6 +4,11 @@ import path from "node:path";
 
 export default defineConfig({
   plugins: [react()],
+  base: "/word-game/",
+  build: {
+    outDir: "docs",
+    emptyOutDir: true,
+  },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
