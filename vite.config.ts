@@ -4,7 +4,7 @@ import path from "node:path";
 
 export default defineConfig({
   plugins: [react()],
-  base: "/word-game/",
+  base: "/",
   build: {
     outDir: "docs",
     emptyOutDir: true,
